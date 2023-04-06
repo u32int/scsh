@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #include "./utils.h"
 
@@ -16,12 +17,19 @@ struct Command {
     char **argv;
     bool builtin;
     // 'end operators' as in "&&", "||" or "|" that determine what happens with the next command that is run
-    const char *endop; // TODO: impl
+    const char *endop;
     // a file to redirect output to if '>' or '>>' was specified
-    const char *redir; // TODO: impl
+    const char *redir;
+    bool redir_append;
 };
 
-static const char *endops[] = { "&&", "||", "|", NULL };
+static const char *endops[] = { "&&", "||", "|", ";", NULL };
+enum ENDOPS {
+    ENDOP_AND,
+    ENDOP_OR,
+    ENDOP_PIPE,
+    ENDOP_SEMICOLON,
+};
 
 void print_cmd(struct Command *cmd)
 {
@@ -30,7 +38,7 @@ void print_cmd(struct Command *cmd)
     for(int i = 0; cmd->argv[i] != NULL; i++)
         printf("[%s] ", cmd->argv[i]);
 
-    printf("\nbuiltin: %b\nendop: %s\n}\n", cmd->builtin, cmd->endop);
+    printf("\nbuiltin: %b\nendop: %s\nredir: %s\n}\n", cmd->builtin, cmd->endop, cmd->redir);
 }
 
 
@@ -57,20 +65,9 @@ ssize_t run_builtin(struct Command *cmd)
         }
 
         return 1;
-    } else if (!strcmp(cmd->name, "env")) {
-        if (cmd->argv[1] != NULL) {
-            fputs("env: too many arguments\n", stderr);
-            return 1;
-        }
-
-        char **env = environ;
-        while (*env != NULL) {
-            puts(*env);
-            env++;
-        }
-
-        return 1;
-    }
+    } else if (!strcmp(cmd->name, "exit")) {
+        exit(0);
+    } 
 
     return 0;
 }
@@ -90,8 +87,19 @@ ssize_t run_cmd(struct Command *cmd)
     }
 
     if (f == 0) {
+        if (cmd->redir != NULL) {
+            int redir_fd = open(cmd->redir,
+                                cmd->redir_append ? O_WRONLY | O_CREAT | O_APPEND : O_WRONLY | O_CREAT,
+                                S_IRUSR | S_IWUSR);
+            if (redir_fd < 0) {
+                perror("redir");
+                exit(1);
+            }
+            dup2(redir_fd, 1);
+        }
+
         execvp(cmd->name, cmd->argv);
-        perror("exec"); // exec has returned which only happens on error
+        perror("exec"); // exec has returned, which only happens on error
         exit(1);
     } else {
         waitpid(f, NULL, 0);
@@ -112,16 +120,38 @@ ssize_t run_cmd(struct Command *cmd)
 ssize_t next_cmd(char *tokens[], size_t count, struct Command *cmd)
 {
     cmd->endop = NULL;
+    cmd->redir = NULL;
+    cmd->redir_append = false;
 
     cmd->name = tokens[0];
     cmd->argv = tokens;
 
     for (int i = 1; tokens[i] != NULL; i++) {
+        // check for redirection
+        if (*(tokens[i]) == '>') {
+            if (*(tokens[i] + 1) == '>' && *(tokens[i] + 2) == 0) {
+                cmd->redir_append = true;
+            } else if (*(tokens[i] + 1) != 0) {
+                continue;
+            }
+           
+            if (tokens[i+1] == NULL || tokens[i+2] != NULL) {
+                fputs("redir: too many or no redir files provided\n", stderr);
+                return -1;
+            }
+
+            cmd->redir = tokens[i+1];
+            tokens[i] = NULL;
+
+            i++; // advance by two tokens to skip the redir file name
+            continue;
+        }
+
+        // check for other ending operators
         for (int j = 0; endops[j] != NULL; j++) {
             if (!strcmp(tokens[i], endops[j])) {
                 cmd->endop = endops[j];
                 tokens[i] = NULL;
-
                 return count - i;
             }
         }
@@ -178,8 +208,11 @@ int interp_line(char *line)
     for (size_t i = 0; i < cc; i++) {
         size_t tc = tokenize_line(parallel[i], tokens, MAX_TOKENS);
         ssize_t seek = 0;
+
         do {
             seek = next_cmd(tokens + seek, tc, &curr_cmd);
+            if (seek < 0)
+                break;
             //print_cmd(&curr_cmd);
             run_cmd(&curr_cmd);
         } while (seek > 0);
@@ -205,8 +238,7 @@ void run(FILE *stream)
 
         nread = getline(&line, &len, stream);
         if (nread < 0)
-            goto run_exit;
-            
+            break;
 
         line[nread-1] = 0; // truncate newline
 
@@ -216,7 +248,6 @@ void run(FILE *stream)
         interp_line(line);
     }
 
- run_exit:
     free(line);
 }
 
