@@ -240,7 +240,8 @@ void run(FILE *stream)
         if (nread < 0)
             break;
 
-        line[nread-1] = 0; // truncate newline
+        if (line[nread-1] == '\n')
+            line[nread-1] = 0; // truncate newline
 
         if (*line == 0 || *line == '#')
             continue; // empty or comment line, ignore
@@ -256,5 +257,18 @@ int main(int argc, char **argv)
     (void)argv;
     if (argc <= 1) {
         run(stdin);
+    } else if (argc == 2) {
+        FILE* file = fopen(argv[1], "r");
+        if (file == NULL) {
+            fprintf(stderr, "%s: %s", argv[1], strerror(errno));
+            return 1;
+        }
+
+        run(file);
+    } else {
+        fputs("scsh: too many arguments\n", stderr);
+        return 1;
     }
+
+    return 0;
 }
