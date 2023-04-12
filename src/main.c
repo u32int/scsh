@@ -10,25 +10,24 @@
 
 #include "./utils.h"
 
-extern char **environ;
+static const char *endops[] = { "&&", "||", "|", ";", NULL };
+enum Endop {
+    ENDOP_AND,
+    ENDOP_OR,
+    ENDOP_PIPE,
+    ENDOP_SEMICOLON,
+    ENDOP_NONE,
+};
 
 struct Command {
     char *name;
     char **argv;
     bool builtin;
     // 'end operators' as in "&&", "||" or "|" that determine what happens with the next command that is run
-    const char *endop;
+    enum Endop endop;
     // a file to redirect output to if '>' or '>>' was specified
     const char *redir;
     bool redir_append;
-};
-
-static const char *endops[] = { "&&", "||", "|", ";", NULL };
-enum ENDOPS {
-    ENDOP_AND,
-    ENDOP_OR,
-    ENDOP_PIPE,
-    ENDOP_SEMICOLON,
 };
 
 void print_cmd(struct Command *cmd)
@@ -38,7 +37,7 @@ void print_cmd(struct Command *cmd)
     for(int i = 0; cmd->argv[i] != NULL; i++)
         printf("[%s] ", cmd->argv[i]);
 
-    printf("\nbuiltin: %b\nendop: %s\nredir: %s\n}\n", cmd->builtin, cmd->endop, cmd->redir);
+    printf("\nbuiltin: %b\nendop: %s\nredir: %s\n}\n", cmd->builtin, endops[cmd->endop], cmd->redir);
 }
 
 
@@ -50,12 +49,12 @@ ssize_t run_builtin(struct Command *cmd)
     if (!strcmp(cmd->name, "cd")) {
         // TODO: cd to home like bash
         if (cmd->argv[1] == NULL) {
-            fputs("cd: no directory provided", stderr);
+            fputs("cd: no directory provided\n", stderr);
             return 1;
         }
 
         if (cmd->argv[2] != NULL) {
-            fputs("cd: too many arguments", stderr);
+            fputs("cd: too many arguments\n", stderr);
             return 1;
         }
 
@@ -117,21 +116,23 @@ ssize_t run_cmd(struct Command *cmd)
  * >0: a command has been parsed but more might follow. Seek forward the tokens array
  *     by @Return elements on the next call.
 */
-ssize_t next_cmd(char *tokens[], size_t count, struct Command *cmd)
+ssize_t next_cmd(char *tokens[], size_t tok_count, struct Command *cmd)
 {
-    cmd->endop = NULL;
+    cmd->endop = ENDOP_NONE;
     cmd->redir = NULL;
     cmd->redir_append = false;
 
     cmd->name = tokens[0];
     cmd->argv = tokens;
 
-    for (int i = 1; tokens[i] != NULL; i++) {
+    for (size_t i = 1; i < tok_count; i++) {
         // check for redirection
         if (*(tokens[i]) == '>') {
             if (*(tokens[i] + 1) == '>' && *(tokens[i] + 2) == 0) {
+                // token is '>>'
                 cmd->redir_append = true;
             } else if (*(tokens[i] + 1) != 0) {
+                // token is '>(something)', ignore
                 continue;
             }
            
@@ -143,16 +144,16 @@ ssize_t next_cmd(char *tokens[], size_t count, struct Command *cmd)
             cmd->redir = tokens[i+1];
             tokens[i] = NULL;
 
-            i++; // advance by two tokens to skip the redir file name
+            i++; // advance by additional token to skip the redir file name
             continue;
         }
 
         // check for other ending operators
         for (int j = 0; endops[j] != NULL; j++) {
             if (!strcmp(tokens[i], endops[j])) {
-                cmd->endop = endops[j];
+                cmd->endop = j;
                 tokens[i] = NULL;
-                return count - i;
+                return 0;
             }
         }
     }
@@ -161,14 +162,14 @@ ssize_t next_cmd(char *tokens[], size_t count, struct Command *cmd)
 }
 
 /**
- * tokenize_line() - Split a line into tokens (interpreting quoted strings as one string)
+ * tokenize_cmd() - Split a command into tokens (interpreting quoted strings as one string)
 */
-size_t tokenize_line(char *str, char *tokens[], size_t size)
+size_t tokenize_cmd(char *cmd, char *tokens[], size_t size)
 {
     char **tok_ptr = tokens;
 #define AUX_SIZE 256
     char *aux_buff[AUX_SIZE];
-    size_t sa = split_into(str, aux_buff, AUX_SIZE, "\"");
+    size_t sa = split_into(cmd, aux_buff, AUX_SIZE, "\"");
 
     for (size_t i = 0; i < sa && tok_ptr < tokens+size-1; i += 2) {
         size_t st = split_into(aux_buff[i], tok_ptr, size - (tok_ptr - tokens), " ");
@@ -195,30 +196,55 @@ size_t tokenize_line(char *str, char *tokens[], size_t size)
 */
 int interp_line(char *line)
 {
-    // split the line into parallel paths.
+    // split the line into parallel commands.
 #define MAX_PARALLEL_CMDS 256
     char *parallel[MAX_PARALLEL_CMDS] = {NULL};
+    size_t cc = split_into(line, parallel, MAX_PARALLEL_CMDS, "&");
 #define MAX_TOKENS 512
     char *tokens[MAX_TOKENS];
-
     struct Command curr_cmd;
 
-    size_t cc = split_into(line, parallel, MAX_PARALLEL_CMDS, "&");
+    if (cc > 1) {
+        // there are multiple parallel commands separated by '&' to run
+        for (size_t i = 0; i < cc; i++) {
+            int pid = fork();
+            if (pid < 0) {
+                return -1;
+            }
 
-    for (size_t i = 0; i < cc; i++) {
-        size_t tc = tokenize_line(parallel[i], tokens, MAX_TOKENS);
+            if (pid == 0) {
+                size_t tc = tokenize_cmd(parallel[i], tokens, MAX_TOKENS);
+                ssize_t seek = 0;
+
+                do {
+                    seek = next_cmd(tokens + seek, tc, &curr_cmd);
+                    if (seek < 0)
+                        break;
+                    run_cmd(&curr_cmd);
+                } while (seek > 0);
+
+                printf("[%lu] Done (%s)\n", i, curr_cmd.name);
+
+                exit(0);
+            } else {
+                printf("[%lu] spawned: %d\n", i, pid);
+            }
+        }
+    } else {
+        // there is only one command
+        // TODO: this is code duplication (might split this entire func into two)
+        size_t tc = tokenize_cmd(parallel[0], tokens, MAX_TOKENS);
         ssize_t seek = 0;
 
         do {
             seek = next_cmd(tokens + seek, tc, &curr_cmd);
             if (seek < 0)
                 break;
-            //print_cmd(&curr_cmd);
             run_cmd(&curr_cmd);
         } while (seek > 0);
     }
 
-    return 1;
+    return 0;
 }
 
 /**
@@ -254,7 +280,6 @@ void run(FILE *stream)
 
 int main(int argc, char **argv)
 {
-    (void)argv;
     if (argc <= 1) {
         run(stdin);
     } else if (argc == 2) {
