@@ -1,13 +1,16 @@
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -g
+CFLAGS_DEBUG ?= -Wall -Wextra -g3 -fsanitize=undefined,address -Wno-unused-variable -Wno-unused-parameter -Wno-unused-function
+CFLAGS ?= -Wall -Wextra
 
-CFILES = src/main.c src/utils.c
+CFILES = src/main.c src/utils.c src/lexer.c
 OUT = scsh
 
 all: $(OUT)
 
 $(OUT): $(CFILES)
-	$(CC) $(CFILES) $(CFLAGS) -o $(OUT)
+	$(CC) $(CFILES) $(CFLAGS_DEBUG) -o $(OUT)
 
 clean:
 	rm $(OUT)
+
+.PHONY: all clean debug

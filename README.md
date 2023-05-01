@@ -1,3 +1,3 @@
 # scsh - the Super Cool Shell (⌐■_■)
 
-This shell is too cool to support most functionality as of now.
+scsh aims to be a small, relatively portable shell for unix-like operating systems.

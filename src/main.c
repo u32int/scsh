@@ -8,38 +8,9 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
-#include "./utils.h"
-
-static const char *endops[] = { "&&", "||", "|", ";", NULL };
-enum Endop {
-    ENDOP_AND,
-    ENDOP_OR,
-    ENDOP_PIPE,
-    ENDOP_SEMICOLON,
-    ENDOP_NONE,
-};
-
-struct Command {
-    char *name;
-    char **argv;
-    bool builtin;
-    // 'end operators' as in "&&", "||" or "|" that determine what happens with the next command that is run
-    enum Endop endop;
-    // a file to redirect output to if '>' or '>>' was specified
-    const char *redir;
-    bool redir_append;
-};
-
-void print_cmd(struct Command *cmd)
-{
-    printf("Command {\nname: %s, argv: ", cmd->name);
-
-    for(int i = 0; cmd->argv[i] != NULL; i++)
-        printf("[%s] ", cmd->argv[i]);
-
-    printf("\nbuiltin: %b\nendop: %s\nredir: %s\n}\n", cmd->builtin, endops[cmd->endop], cmd->redir);
-}
-
+#include "utils.h"
+#include "config.h"
+#include "lexer.h"
 
 /**
  * run_builtin() - Check if @cmd is a valid built-in command and if so, try to run it.
@@ -73,38 +44,57 @@ ssize_t run_builtin(struct Command *cmd)
 
 /**
  * run_cmd() - Try to run the specified command
+ *
+ * Return:
+ * >= 0: exit code of the command run
+ * < 0: error
 */
-ssize_t run_cmd(struct Command *cmd)
+int run_cmd(struct Command *cmd)
 {
     if (run_builtin(cmd) > 0)
         return 0;
 
-    pid_t f = fork();
-    if (f < 0) {
-        perror("fork");
-        return f;
-    }
+    int frk = fork();
+    if (frk == 0) {
+        // child
+        if (cmd->redir) {
+            int flags = cmd->redir_append ?
+                O_WRONLY | O_CREAT | O_APPEND :
+                O_WRONLY | O_CREAT;
 
-    if (f == 0) {
-        if (cmd->redir != NULL) {
-            int redir_fd = open(cmd->redir,
-                                cmd->redir_append ? O_WRONLY | O_CREAT | O_APPEND : O_WRONLY | O_CREAT,
-                                S_IRUSR | S_IWUSR);
-            if (redir_fd < 0) {
-                perror("redir");
-                exit(1);
+            // rw-r--r--
+            int mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+
+            int fd = open(cmd->redir, flags, mode);
+            if (fd < 0) {
+                perror("redirection (open)");
+                return -1;
             }
-            dup2(redir_fd, 1);
+
+            // replace stdout with newly opened file
+            if (dup2(fd, 1) < 0) {
+                perror("redirection (dup)");
+                return -1;
+            }
         }
 
         execvp(cmd->name, cmd->argv);
-        perror("exec"); // exec has returned, which only happens on error
-        exit(1);
+
+        // exec should never return when successful
+        perror("exec");
+        return -1;
+    } else if (frk > 0) {
+        // parent
+        int child_status;
+        waitpid(frk, &child_status, 0);
+        return child_status;
     } else {
-        waitpid(f, NULL, 0);
+        // error
+        perror("fork");
+        return -1;
     }
 
-    return 0;
+    return 0; // unreachable
 }
 
 /**
@@ -116,133 +106,86 @@ ssize_t run_cmd(struct Command *cmd)
  * >0: a command has been parsed but more might follow. Seek forward the tokens array
  *     by @Return elements on the next call.
 */
-ssize_t next_cmd(char *tokens[], size_t tok_count, struct Command *cmd)
+ssize_t next_cmd(const char *tokens[], struct Command *cmd)
 {
-    cmd->endop = ENDOP_NONE;
+    if (tok_is_operator(tokens[0])) {
+        fputs("scsh: syntax error: unexpected operator as first token\n", stderr);
+        return -1;
+    }
+
+    cmd->endop = operators[OP_NONE];
+
+    cmd->name = tokens[0];
+    cmd->argv = (char *const *)tokens;
     cmd->redir = NULL;
     cmd->redir_append = false;
 
-    cmd->name = tokens[0];
-    cmd->argv = tokens;
+    const char **curr = tokens;
 
-    for (size_t i = 1; i < tok_count; i++) {
-        // check for redirection
-        if (*(tokens[i]) == '>') {
-            if (*(tokens[i] + 1) == '>' && *(tokens[i] + 2) == 0) {
-                // token is '>>'
-                cmd->redir_append = true;
-            } else if (*(tokens[i] + 1) != 0) {
-                // token is '>(something)', ignore
+    while (*curr != NULL) {
+        if (*curr == operators[OP_REDIR] ||
+            *curr == operators[OP_REDIR_APPEND]) {
+            if (*(curr + 1) != NULL) {
+                cmd->redir = *(curr + 1);
+                // mark redir_append
+                cmd->redir_append = *curr == operators[OP_REDIR_APPEND];
+
+                // terminate argv
+                *curr = NULL;
+
+                curr += 2;
                 continue;
-            }
-           
-            if (tokens[i+1] == NULL || tokens[i+2] != NULL) {
-                fputs("redir: too many or no redir files provided\n", stderr);
+            } else {
+                fputs("scsh: redirection target file expected.\n", stderr);
                 return -1;
             }
+        } else if (*curr == operators[OP_AMPERSAND]) {
+            /* TODO */
+        } else if (tok_is_operator(*curr)) {
+            // a different operator, store it as part of cmd
+            cmd->endop = *curr;
+            *curr = NULL;
 
-            cmd->redir = tokens[i+1];
-            tokens[i] = NULL;
-
-            i++; // advance by additional token to skip the redir file name
-            continue;
+            return curr - tokens + 1;
         }
 
-        // check for other ending operators
-        for (int j = 0; endops[j] != NULL; j++) {
-            if (!strcmp(tokens[i], endops[j])) {
-                cmd->endop = j;
-                tokens[i] = NULL;
-                return 0;
-            }
-        }
+        curr++;
     }
 
     return 0;
 }
 
-/**
- * tokenize_cmd() - Split a command into tokens (interpreting quoted strings as one string)
-*/
-size_t tokenize_cmd(char *cmd, char *tokens[], size_t size)
-{
-    char **tok_ptr = tokens;
-#define AUX_SIZE 256
-    char *aux_buff[AUX_SIZE];
-    size_t sa = split_into(cmd, aux_buff, AUX_SIZE, "\"");
-
-    for (size_t i = 0; i < sa && tok_ptr < tokens+size-1; i += 2) {
-        size_t st = split_into(aux_buff[i], tok_ptr, size - (tok_ptr - tokens), " ");
-        tok_ptr += st;
-
-        if (i != sa - 1) {
-            *tok_ptr = aux_buff[i+1];
-            tok_ptr++;
-        }
-    }
-    *tok_ptr = NULL;
-
-    return tok_ptr - tokens;
-}
 
 /**
- * interp_line() - Interpret a single shell instruction line (which can contain many commands)
- * @line: the line to interpret
+ * interp_line() - Interpret a single shell instruction line (which can contain many expressions)
+ * @line
  *
  * Return:
- * -1: an error has occured and it should be handled outside the function.
- *  0: invalid command.
- *  1: success.
+ * -1: an error has occured.
+ *  0: success.
+ *  1: invalid command.
 */
 int interp_line(char *line)
 {
-    // split the line into parallel commands.
-#define MAX_PARALLEL_CMDS 256
-    char *parallel[MAX_PARALLEL_CMDS] = {NULL};
-    size_t cc = split_into(line, parallel, MAX_PARALLEL_CMDS, "&");
-#define MAX_TOKENS 512
-    char *tokens[MAX_TOKENS];
-    struct Command curr_cmd;
+    const char *tokens[CONF_MAX_TOKENS];
+    ssize_t tok_count, ns, seek = 0;
+    struct Command cmd;
 
-    if (cc > 1) {
-        // there are multiple parallel commands separated by '&' to run
-        for (size_t i = 0; i < cc; i++) {
-            int pid = fork();
-            if (pid < 0) {
-                return -1;
-            }
-
-            if (pid == 0) {
-                size_t tc = tokenize_cmd(parallel[i], tokens, MAX_TOKENS);
-                ssize_t seek = 0;
-
-                do {
-                    seek = next_cmd(tokens + seek, tc, &curr_cmd);
-                    if (seek < 0)
-                        break;
-                    run_cmd(&curr_cmd);
-                } while (seek > 0);
-
-                printf("[%lu] Done (%s)\n", i, curr_cmd.name);
-
-                exit(0);
-            } else {
-                printf("[%lu] spawned: %d\n", i, pid);
-            }
-        }
-    } else {
-        // there is only one command
-        // TODO: this is code duplication (might split this entire func into two)
-        size_t tc = tokenize_cmd(parallel[0], tokens, MAX_TOKENS);
-        ssize_t seek = 0;
-
-        do {
-            seek = next_cmd(tokens + seek, tc, &curr_cmd);
-            if (seek < 0)
-                break;
-            run_cmd(&curr_cmd);
-        } while (seek > 0);
+    if ((tok_count = tokenize_line(line, tokens, CONF_MAX_TOKENS)) < 0) {
+        fputs("scsh: syntax error", stderr);
+        return 1;
     }
+
+    do {
+        ns = next_cmd(tokens + seek, &cmd);
+        if (ns < 0) // error
+            return 1;
+
+        //print_cmd(&cmd);
+        run_cmd(&cmd);
+
+        seek += ns;
+    } while (ns > 0);
 
     return 0;
 }
@@ -290,10 +233,12 @@ int main(int argc, char **argv)
         }
 
         run(file);
+        fclose(file);
     } else {
         fputs("scsh: too many arguments\n", stderr);
         return 1;
     }
 
     return 0;
+
 }
