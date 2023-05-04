@@ -67,14 +67,14 @@ int run_cmd(struct Command *cmd)
 
             int fd = open(cmd->redir, flags, mode);
             if (fd < 0) {
-                perror("redirection (open)");
-                return -1;
+                perror("[sys_open] redirection");
+                exit(1);
             }
 
             // replace stdout with newly opened file
             if (dup2(fd, 1) < 0) {
-                perror("redirection (dup)");
-                return -1;
+                perror("[sys_dup] redirection");
+                exit(1);
             }
         }
 
@@ -82,7 +82,7 @@ int run_cmd(struct Command *cmd)
 
         // exec should never return when successful
         perror("exec");
-        return -1;
+        exit(1);
     } else if (frk > 0) {
         // parent
         int child_status;
@@ -140,7 +140,7 @@ ssize_t next_cmd(const char *tokens[], struct Command *cmd)
                 return -1;
             }
         } else if (*curr == operators[OP_AMPERSAND]) {
-            /* TODO */
+            todo("ampersand token handler");
         } else if (tok_is_operator(*curr)) {
             // a different operator, store it as part of cmd
             cmd->endop = *curr;

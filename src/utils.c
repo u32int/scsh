@@ -41,12 +41,12 @@ size_t split_into(char *str, char *array[], size_t size, const char *delim)
 
 _Noreturn void panic(const char *msg)
 {
-    fprintf(stderr,"panic! - %s", msg);
+    fprintf(stderr,"panic! - %s\n", msg);
     exit(1);
 }
 
 _Noreturn void todo(const char *msg)
 {
-    fprintf(stderr,"todo - \"%s\" is not implemented", msg);
+    fprintf(stderr,"todo - \"%s\" is not implemented\n", msg);
     exit(1);
 }
