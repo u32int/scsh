@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "./utils.h"
+#include "command.h"
+#include "utils.h"
 
 void print_strarray(const char **array) {
     fputs("[ ", stdout);
@@ -19,7 +20,15 @@ void print_cmd(struct Command *cmd)
     for(int i = 0; cmd->argv[i] != NULL; i++)
         printf("[%s] ", cmd->argv[i]);
 
-    printf("\nendop: %s\nredir: %s (append: %d)\n}\n", cmd->endop, cmd->redir, cmd->redir_append);
+    printf("\nop: %s\nredir: %s (append: %d) next %p\n}\n", cmd->op, cmd->redir, cmd->redir_append, cmd->next);
+}
+
+void print_cmd_stream(struct Command *cmd)
+{
+    while(cmd != NULL) {
+        print_cmd(cmd);
+        cmd = cmd->next;
+    }
 }
 
 size_t split_into(char *str, char *array[], size_t size, const char *delim)
@@ -41,7 +50,7 @@ size_t split_into(char *str, char *array[], size_t size, const char *delim)
 
 _Noreturn void panic(const char *msg)
 {
-    fprintf(stderr,"panic! - %s\n", msg);
+    perror(msg);
     exit(1);
 }
 

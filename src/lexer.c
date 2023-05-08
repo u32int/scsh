@@ -2,8 +2,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #include "utils.h"
+#include "command.h"
 #include "lexer.h"
 
 // the order of operators matters here, the onces at lower indices get higher priority in the lexer 
@@ -55,7 +57,7 @@ int tokenize_line(char *line, const char **tokens, size_t size)
             if (*curr == 0) {
                 // maybe instead of throwing an error here we could do something similar to bash
                 // and let the user continue typing on the next line (PS2/'> ')
-                fputs("parse error: unterminated '\"' (quote)", stderr);
+                fputs("scsh: parse error: unterminated quote (\")\n", stderr);
                 return -1;
             }
 
