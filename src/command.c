@@ -9,6 +9,9 @@
 #include "lexer.h"
 #include "utils.h"
 
+// most likely temporary, considering creating a dedicated structure for shell state
+unsigned char LAST_EXIT_CODE = 0;
+
 /**
  * run_builtin() - Check if @cmd is a valid built-in command and if so, try to run it
  *
@@ -17,20 +20,18 @@
 ssize_t run_builtin(struct Command *cmd)
 {
     if (!strcmp(cmd->name, "cd")) {
-        // TODO: cd to home like bash
+        char *dir = cmd->argv[1];
         if (cmd->argv[1] == NULL) {
-            fputs("cd: no directory provided\n", stderr);
-            return 1;
-        }
-
-        if (cmd->argv[2] != NULL) {
-            fputs("cd: too many arguments\n", stderr);
+            dir = getenv("HOME");
+            if (!dir) {
+                fputs("cd: no directory provided and no HOME envvar set.\n", stderr);
+                return 1;
+            }
             return 1;
         }
 
         if (chdir(cmd->argv[1]) < 0) {
             perror("cd");
-            return 1;
         }
 
         return 1;
@@ -108,22 +109,14 @@ int run_cmd(struct Command *cmd)
     } else if (frk_outer > 0) {
         int status;
         waitpid(frk_outer, &status, 0);
+        if (WIFEXITED(status))
+            LAST_EXIT_CODE = WEXITSTATUS(status);
         return status;
     } else {
         panic("scsh: pipe");
     }
 
     __builtin_unreachable();
-}
-
-void free_cmd_list(struct Command *cmd)
-{
-    if (!cmd)
-        return;
-
-    struct Command *next_free = cmd->next;
-    free(cmd);
-    free_cmd_list(next_free);
 }
 
 /**
@@ -202,7 +195,9 @@ struct Command *cmd_list_from_tok(const char *tokens[])
     curr = root;
     for(;;) {
         seek = fill_cmd(tokens, curr);
-        if (seek == 0)
+        if (seek == -1)
+            return NULL;
+        else if (seek == 0)
             break;
         tokens += seek;
 

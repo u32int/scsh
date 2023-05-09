@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <string.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #include "utils.h"
 #include "config.h"
@@ -20,14 +21,20 @@
 int exec_line(char *line)
 {
     const char *tokens[CONF_MAX_TOKENS];
+    bool free_list[CONF_MAX_TOKENS] = { false };
     struct Command *root, *cmd;
-    tokenize_line(line, tokens, CONF_MAX_TOKENS);
+
+    if(tokenize_line(line, tokens, free_list, CONF_MAX_TOKENS) < 0)
+        return 1;
     root = cmd_list_from_tok(tokens);
+    if (!root)
+        return 1;
 
     cmd = root;
     while (cmd) {
         run_cmd(cmd);
-        // seek to the nearest non-pipe (this is a suboptimal way of handling this)
+        // seek to the nearest non-pipe (this is a suboptimal way of handling this, we should probably somehow
+        // return this info from the func)
         while(cmd && cmd->op == operators[OP_PIPE])
             cmd = cmd->next;
 
@@ -36,6 +43,7 @@ int exec_line(char *line)
     }
 
     free_cmd_list(root);
+    free_array((void **)tokens, free_list, CONF_MAX_TOKENS);
     return 0;
 }
 

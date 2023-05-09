@@ -1,15 +1,45 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdbool.h>
 #include <unistd.h>
 
 #include "utils.h"
 #include "command.h"
 #include "lexer.h"
 
+extern unsigned char LAST_EXIT_CODE;
+
 // the order of operators matters here, the onces at lower indices get higher priority in the lexer 
 const char *operators[] = { "&&", "&", "||", "|", ">>", ">", ";", NULL };
+
+/* expand_variable() - expands a variable allocating memory for it on the heap or pointing to an env var.
+ *
+ * Return:
+ * 0: variable does not exits and has not been expanded. No memory has been allocated.
+ * 1: variable is valid and @var_ptr has been replaced with a pointer to the allocted memory. It is
+ *    the responsibility of the caller to free the memory.
+ * 2: variable is a valid env var. Since env vars aren't allocated on the heap, _don't_ call free() on it.
+*/
+int expand_variable(char **var_ptr)
+{
+    const char *var = *var_ptr + 1; // skip '$'
+    if (!strcmp(var, "?")) {
+        *var_ptr = malloc(4); // exit codes range 0-255 - max 3 chars + null terminator
+        if (!var_ptr)
+            panic("scsh: malloc");
+
+        snprintf(*var_ptr, 4, "%u", LAST_EXIT_CODE);
+        return 1;
+    } else {
+        char *envvar = getenv(var);
+        if (envvar) {
+            *var_ptr = envvar;
+            return 2;
+        }
+    }
+
+    return 0;
+}
 
 /* tokenize_line() - turn a passed string into an array of tokens
  *
@@ -17,7 +47,7 @@ const char *operators[] = { "&&", "&", "||", "|", ">>", ">", ";", NULL };
  * -1: parse error, the tokens array is unusable
  *>=0: the number of tokens generated
 */
-int tokenize_line(char *line, const char **tokens, size_t size)
+int tokenize_line(char *line, const char *tokens[], bool free_list[], size_t size)
 {
     char *curr = line;
     size_t tki = 0;
@@ -40,6 +70,15 @@ int tokenize_line(char *line, const char **tokens, size_t size)
             // add token
             *curr = 0;
             tokens[tki] = prev;
+            if (tokens[tki][0] == '$') {
+                int ex = expand_variable((char **)&tokens[tki]);
+                if (!ex) {
+                    fprintf(stderr, "scsh: '%s' is not a valid variable\n", tokens[tki]);
+                    return -1;
+                }
+                if (ex == 1) // can't just free_list[tki] = ex, check return of expand_variable()
+                    free_list[tki] = true;
+            }
             tki++;
 
             curr++;
@@ -53,6 +92,7 @@ int tokenize_line(char *line, const char **tokens, size_t size)
             // seek until the next quote
             while (*curr != '\"' && *curr != 0)
                 curr++;
+
 
             if (*curr == 0) {
                 // maybe instead of throwing an error here we could do something similar to bash
@@ -76,6 +116,11 @@ int tokenize_line(char *line, const char **tokens, size_t size)
                 // uhhh this is not great and we could do better performance wise
                 size_t oplen = strlen(operators[i]);
                 if (!strncmp(operators[i], curr, oplen)) {
+                    if (*(curr + 1) == 0 && i == OP_PIPE) {
+                        fputs("scsh: parse error: unterminated pipe\n", stderr);
+                        return -1;
+                    }
+
                     is_op = true;
 
                     // save preceding string, if any (ex. in 'ls&&' the 'ls')
@@ -102,9 +147,19 @@ int tokenize_line(char *line, const char **tokens, size_t size)
     }
 
     // add the remaining part as one token
+    // this is duplicating code and has caused some bugs already.. maybe some clever "case 0:" would work?
     if (prev != curr) {
         *curr = 0;
         tokens[tki] = prev;
+        if (tokens[tki][0] == '$') {
+            int ex = expand_variable((char **)&tokens[tki]);
+            if (!ex) {
+                fprintf(stderr, "scsh: '%s' is not a valid variable\n", tokens[tki]);
+                return -1;
+            }
+            if (ex == 1) // can't just free_list[tki] = ex, check return of expand_variable()
+                free_list[tki] = true;
+        }
         tki++;
     }
 

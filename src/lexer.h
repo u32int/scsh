@@ -1,6 +1,8 @@
 #ifndef _LEXER_H
 #define _LEXER_H
 
+#include <stdbool.h>
+
 // see the lexer.c file for the array of operators
 extern const char *operators[];
 enum Operator {
@@ -14,7 +16,7 @@ enum Operator {
     OP_NONE
 };
 
-int tokenize_line(char *line, const char **tokens, size_t size);
+int tokenize_line(char *line, const char *tokens[], bool free_list[], size_t size);
 bool tok_is_operator(const char *str);
 
 #endif

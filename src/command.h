@@ -17,6 +17,5 @@ struct Command {
 
 int run_cmd(struct Command *cmd);
 struct Command *cmd_list_from_tok(const char *tokens[]);
-void free_cmd_list(struct Command *cmd);
 
 #endif /* _COMMAND_H */

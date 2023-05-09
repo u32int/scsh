@@ -45,7 +45,26 @@ size_t split_into(char *str, char *array[], size_t size, const char *delim)
     }
 
     array[i] = NULL;
-    return i;
+   return i;
+}
+
+void free_cmd_list(struct Command *cmd)
+{
+    if (!cmd)
+        return;
+
+    struct Command *next_free = cmd->next;
+    free(cmd);
+    free_cmd_list(next_free);
+}
+
+void free_array(void **array, bool free_list[], size_t size)
+{
+    for (size_t i = 0; i < size; i++) {
+        if (free_list[i]) {
+            free(array[i]);
+        }
+    }
 }
 
 _Noreturn void panic(const char *msg)
