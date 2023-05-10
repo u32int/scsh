@@ -23,12 +23,21 @@ int exec_line(char *line)
     const char *tokens[CONF_MAX_TOKENS];
     bool free_list[CONF_MAX_TOKENS] = { false };
     struct Command *root, *cmd;
+    int ret = 0;
 
-    if(tokenize_line(line, tokens, free_list, CONF_MAX_TOKENS) < 0)
-        return 1;
+    if(tokenize_line(line, tokens, free_list, CONF_MAX_TOKENS) < 0) {
+        ret = 1;
+        goto exit;
+    }
+
+    if (tokens[0] == NULL)
+        return 0; // we don't need to go to exit since there is nothing to free.
+ 
     root = cmd_list_from_tok(tokens);
-    if (!root)
-        return 1;
+    if (!root) {
+        ret = 1;
+        goto exit;
+    }
 
     cmd = root;
     while (cmd) {
@@ -42,9 +51,11 @@ int exec_line(char *line)
             cmd = cmd->next;
     }
 
+
+ exit:
     free_cmd_list(root);
     free_array((void **)tokens, free_list, CONF_MAX_TOKENS);
-    return 0;
+    return ret;
 }
 
 /**

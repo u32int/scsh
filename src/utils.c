@@ -23,7 +23,7 @@ void print_cmd(struct Command *cmd)
     printf("\nop: %s\nredir: %s (append: %d) next %p\n}\n", cmd->op, cmd->redir, cmd->redir_append, cmd->next);
 }
 
-void print_cmd_stream(struct Command *cmd)
+void print_cmd_list(struct Command *cmd)
 {
     while(cmd != NULL) {
         print_cmd(cmd);
@@ -61,9 +61,8 @@ void free_cmd_list(struct Command *cmd)
 void free_array(void **array, bool free_list[], size_t size)
 {
     for (size_t i = 0; i < size; i++) {
-        if (free_list[i]) {
+        if (free_list[i])
             free(array[i]);
-        }
     }
 }
 

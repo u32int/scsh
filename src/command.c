@@ -130,6 +130,8 @@ int run_cmd(struct Command *cmd)
 */
 int fill_cmd(const char *tokens[], struct Command *cmd)
 {
+    cmd->next = NULL;
+    cmd->prev = NULL;
 
     if (tok_is_operator(tokens[0])) {
         fputs("scsh: unexpected operator as first token in a new command\n", stderr);
@@ -141,8 +143,6 @@ int fill_cmd(const char *tokens[], struct Command *cmd)
     cmd->argv = (char *const *)tokens;
     cmd->redir = NULL;
     cmd->redir_append = false;
-    cmd->next = NULL;
-    cmd->prev = NULL;
 
     const char **tok = tokens;
     while (*tok != NULL) {
@@ -195,8 +195,11 @@ struct Command *cmd_list_from_tok(const char *tokens[])
     curr = root;
     for(;;) {
         seek = fill_cmd(tokens, curr);
-        if (seek == -1)
+        if (seek == -1) {
+            // error, free whatever was allocated
+            free_cmd_list(root);
             return NULL;
+        }
         else if (seek == 0)
             break;
         tokens += seek;

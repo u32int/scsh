@@ -43,6 +43,8 @@ int expand_variable(char **var_ptr)
 
 /* tokenize_line() - turn a passed string into an array of tokens
  *
+ * @size: size of tokens and free_list
+ *
  * Return
  * -1: parse error, the tokens array is unusable
  *>=0: the number of tokens generated
@@ -164,7 +166,6 @@ int tokenize_line(char *line, const char *tokens[], bool free_list[], size_t siz
     }
 
     tokens[tki] = NULL;
-
     return tki;
 }
 
