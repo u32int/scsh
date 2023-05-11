@@ -6,8 +6,7 @@
 #include "utils.h"
 #include "command.h"
 #include "lexer.h"
-
-extern unsigned char LAST_EXIT_CODE;
+#include "shellstate.h"
 
 // the order of operators matters here, the onces at lower indices get higher priority in the lexer 
 const char *operators[] = { "&&", "&", "||", "|", ">>", ">", ";", NULL };
@@ -33,7 +32,7 @@ int expand_variable(char **var_ptr)
         if (!var_ptr)
             panic("scsh: malloc");
 
-        snprintf(*var_ptr, 4, "%u", LAST_EXIT_CODE);
+        snprintf(*var_ptr, 4, "%u", SHELL_STATE.last_exit);
         return 1;
     } else {
         char *envvar = getenv(var);
@@ -196,9 +195,8 @@ int tokenize_line(char *line, const char *tokens[], bool free_list[], size_t siz
     }
     tokens[tki] = NULL;
 
-    if (validate_tokens(tokens, tki) < 0) {
+    if (validate_tokens(tokens, tki) < 0)
         return -1;
-    }
 
     return tki;
 }

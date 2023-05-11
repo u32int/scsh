@@ -8,9 +8,7 @@
 #include "command.h"
 #include "lexer.h"
 #include "utils.h"
-
-// most likely temporary, considering creating a dedicated structure for shell state
-unsigned char LAST_EXIT_CODE = 0;
+#include "shellstate.h"
 
 /**
  * run_builtin() - Check if @cmd is a valid built-in command and if so, try to run it
@@ -21,6 +19,7 @@ ssize_t run_builtin(struct Command *cmd)
 {
     if (!strcmp(cmd->name, "cd")) {
         char *dir = cmd->argv[1];
+
         if (cmd->argv[1] == NULL) {
             dir = getenv("HOME");
             if (!dir) {
@@ -28,12 +27,23 @@ ssize_t run_builtin(struct Command *cmd)
                 return 1;
             }
             return 1;
+        } else if (!strcmp(cmd->argv[1], "-")) {
+            if (SHELL_STATE.oldpwd[0] == 0) {
+                fputs("scsh: error: no oldpwd yet!\n", stderr);
+                return 1;
+            }
+
+            dir = SHELL_STATE.oldpwd;
         }
 
-        if (chdir(cmd->argv[1]) < 0) {
+        if (chdir(dir) < 0)
             perror("cd");
-        }
 
+        strncpy(SHELL_STATE.oldpwd, SHELL_STATE.pwd, CONF_MAX_DIR_LEN);
+        getcwd(SHELL_STATE.pwd, CONF_MAX_DIR_LEN);
+        /* TODO using putenv would probably be better here as this makes an unnecessary copy */
+        setenv("PWD",    SHELL_STATE.pwd, 1);
+        setenv("OLDPWD", SHELL_STATE.oldpwd, 1);
         return 1;
     } else if (!strcmp(cmd->name, "exit")) {
         exit(0);
@@ -110,7 +120,7 @@ int run_cmd(struct Command *cmd)
         int status;
         waitpid(frk_outer, &status, 0);
         if (WIFEXITED(status))
-            LAST_EXIT_CODE = WEXITSTATUS(status);
+            SHELL_STATE.last_exit = WEXITSTATUS(status);
         return status;
     } else {
         panic("scsh: pipe");

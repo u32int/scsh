@@ -4,11 +4,15 @@
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #include "utils.h"
 #include "config.h"
 #include "lexer.h"
 #include "command.h"
+#include "shellstate.h"
+
+struct ShellState SHELL_STATE;
 
 /**
  * exec_line() - Execute a single shell instruction line
@@ -86,9 +90,15 @@ void run(FILE *stream)
     free(line);
 }
 
+void setup()
+{
+    getcwd(SHELL_STATE.pwd, CONF_MAX_DIR_LEN);
+}
+
 int main(int argc, char **argv)
 {
     if (argc <= 1) {
+        setup();
         run(stdin);
     } else if (argc == 2) {
         FILE* file = fopen(argv[1], "r");
@@ -97,6 +107,7 @@ int main(int argc, char **argv)
             return 1;
         }
 
+        setup();
         run(file);
         fclose(file);
     } else {
