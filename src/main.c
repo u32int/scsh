@@ -51,7 +51,6 @@ int exec_line(char *line)
             cmd = cmd->next;
     }
 
-
  exit:
     free_cmd_list(root);
     free_array((void **)tokens, free_list, CONF_MAX_TOKENS);

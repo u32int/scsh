@@ -41,6 +41,25 @@ int expand_variable(char **var_ptr)
     return 0;
 }
 
+/* add_token() - helper function for tokenize_line()
+*/
+int add_token(const char *tokens[], size_t *tki, char *tok_start, bool free_list[])
+{
+    tokens[*tki] = tok_start;
+    if (tokens[*tki][0] == '$') {
+        int ex = expand_variable((char **)&tokens[*tki]);
+        if (!ex) {
+            fprintf(stderr, "scsh: '%s' is not a valid variable\n", tokens[*tki]);
+            return -1;
+        }
+        if (ex == 1) // can't just free_list[*tki] = ex, check return of expand_variable()
+            free_list[*tki] = true;
+    }
+    (*tki)++;
+
+    return 0;
+}
+
 /* tokenize_line() - turn a passed string into an array of tokens
  *
  * @size: size of tokens and free_list
@@ -71,17 +90,8 @@ int tokenize_line(char *line, const char *tokens[], bool free_list[], size_t siz
 
             // add token
             *curr = 0;
-            tokens[tki] = prev;
-            if (tokens[tki][0] == '$') {
-                int ex = expand_variable((char **)&tokens[tki]);
-                if (!ex) {
-                    fprintf(stderr, "scsh: '%s' is not a valid variable\n", tokens[tki]);
-                    return -1;
-                }
-                if (ex == 1) // can't just free_list[tki] = ex, check return of expand_variable()
-                    free_list[tki] = true;
-            }
-            tki++;
+            if(add_token(tokens, &tki, prev, free_list) < 0)
+                return -1;
 
             curr++;
             prev = curr;
@@ -149,20 +159,10 @@ int tokenize_line(char *line, const char *tokens[], bool free_list[], size_t siz
     }
 
     // add the remaining part as one token
-    // this is duplicating code and has caused some bugs already.. maybe some clever "case 0:" would work?
     if (prev != curr) {
         *curr = 0;
-        tokens[tki] = prev;
-        if (tokens[tki][0] == '$') {
-            int ex = expand_variable((char **)&tokens[tki]);
-            if (!ex) {
-                fprintf(stderr, "scsh: '%s' is not a valid variable\n", tokens[tki]);
-                return -1;
-            }
-            if (ex == 1) // can't just free_list[tki] = ex, check return of expand_variable()
-                free_list[tki] = true;
-        }
-        tki++;
+        if(add_token(tokens, &tki, prev, free_list) < 0)
+            return -1;
     }
 
     tokens[tki] = NULL;

@@ -182,6 +182,8 @@ int fill_cmd(const char *tokens[], struct Command *cmd)
 
 /*
  * cmd_list_from_tok() - Fill a linked list of [struct Command *] using @tokens
+ *
+ * Return: NULL on failure, ptr to allocated [struct Command *] linked list on success.
 */
 struct Command *cmd_list_from_tok(const char *tokens[])
 {
@@ -203,6 +205,7 @@ struct Command *cmd_list_from_tok(const char *tokens[])
         else if (seek == 0)
             break;
         tokens += seek;
+        // print_cmd(curr);
 
         curr->next = malloc(sizeof(struct Command));
         if (!curr->next)
