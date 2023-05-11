@@ -132,12 +132,6 @@ int fill_cmd(const char *tokens[], struct Command *cmd)
 {
     cmd->next = NULL;
     cmd->prev = NULL;
-
-    if (tok_is_operator(tokens[0])) {
-        fputs("scsh: unexpected operator as first token in a new command\n", stderr);
-        return -1;
-    }
-
     cmd->op = operators[OP_NONE];
     cmd->name = tokens[0];
     cmd->argv = (char *const *)tokens;
@@ -149,6 +143,7 @@ int fill_cmd(const char *tokens[], struct Command *cmd)
         if (*tok == operators[OP_REDIR] ||
             *tok == operators[OP_REDIR_APPEND]) {
             // setup redirection
+            // checking this might not be necessary anymore since the lexer performs validation
             if (*(tok + 1) != NULL) {
                 cmd->redir = *(tok + 1);
                 // mark redir_append
@@ -159,11 +154,7 @@ int fill_cmd(const char *tokens[], struct Command *cmd)
 
                 tok += 2;
                 continue;
-            } else {
-                fputs("scsh: redirection target file expected.\n", stderr);
-                return -1;
             }
-            
         }
 
         if (tok_is_operator(*tok)) {

@@ -12,6 +12,11 @@ extern unsigned char LAST_EXIT_CODE;
 // the order of operators matters here, the onces at lower indices get higher priority in the lexer 
 const char *operators[] = { "&&", "&", "||", "|", ">>", ">", ";", NULL };
 
+bool tok_is_operator(const char *token)
+{
+    return token >= operators[0] && token <= operators[OP_NONE-1];
+}
+
 /* expand_variable() - expands a variable allocating memory for it on the heap or pointing to an env var.
  *
  * Return:
@@ -56,6 +61,31 @@ int add_token(const char *tokens[], size_t *tki, char *tok_start, bool free_list
             free_list[*tki] = true;
     }
     (*tki)++;
+
+    return 0;
+}
+
+/* validate_tokens() - does a second pass across the tokens array to check for syntax errors that are awkward
+ *                     in the first pass.
+*/
+int validate_tokens(const char *tokens[], size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        if (tok_is_operator(tokens[i])) {
+            if (i == 0 || tok_is_operator(tokens[i - 1])) {
+                fprintf(stderr, "scsh: syntax error: '%s' unexpected operator\n", tokens[i]);
+                return -1;
+            }
+
+            if (i == len - 1 &&
+                tokens[i] != operators[OP_SEMICOLON] &&
+                tokens[i] != operators[OP_AMPERSAND]) {
+                fprintf(stderr, "scsh: syntax error: '%s' unexpected operator at the end of a command\n",
+                        tokens[i]);
+                return -1;
+            }
+        }
+    }
 
     return 0;
 }
@@ -164,12 +194,11 @@ int tokenize_line(char *line, const char *tokens[], bool free_list[], size_t siz
         if(add_token(tokens, &tki, prev, free_list) < 0)
             return -1;
     }
-
     tokens[tki] = NULL;
-    return tki;
-}
 
-bool tok_is_operator(const char *token)
-{
-    return token >= operators[0] && token <= operators[OP_NONE-1];
+    if (validate_tokens(tokens, tki) < 0) {
+        return -1;
+    }
+
+    return tki;
 }
