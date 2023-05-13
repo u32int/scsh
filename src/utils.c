@@ -20,7 +20,9 @@ void print_cmd(struct Command *cmd)
     for(int i = 0; cmd->argv[i] != NULL; i++)
         printf("[%s] ", cmd->argv[i]);
 
-    printf("\nop: %s\nredir: %s (append: %d) next %p\n}\n", cmd->op, cmd->redir, cmd->redir_append, cmd->next);
+    printf("\nop: %s\nredir: %s (append: %d)\n", cmd->op, cmd->redir, cmd->redir_append);
+    printf("prev, next: %p %p\n", cmd->prev, cmd->next);
+    puts("}");
 }
 
 void print_cmd_list(struct Command *cmd)

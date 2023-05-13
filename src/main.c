@@ -42,8 +42,16 @@ int exec_line(char *line)
         return 1;
     }
 
+    //print_cmd_list(root);
     cmd = root;
     while (cmd) {
+        if (cmd->prev) {
+            if (cmd->prev->op == operators[OP_AND] && SHELL_STATE.last_exit != 0)
+                break;
+
+            if (cmd->prev->op == operators[OP_OR] && SHELL_STATE.last_exit == 0)
+                break;
+        }
         run_cmd(cmd);
         // seek to the nearest non-pipe (this is a suboptimal way of handling this, we should probably somehow
         // return this info from the func)

@@ -76,7 +76,7 @@ void do_exec(struct Command *cmd)
     }
 
     execvp(cmd->name, cmd->argv); // exec never returns when successful
-    panic("scsh: exec");
+    panic(cmd->name);
 }
 
 /**
@@ -115,7 +115,7 @@ int run_cmd(struct Command *cmd)
             }
         }
 
-        do_exec(cmd);
+        do_exec(cmd); // do_exec never returns
     } else if (frk_outer > 0) {
         int status;
         waitpid(frk_outer, &status, 0);
@@ -141,7 +141,6 @@ int run_cmd(struct Command *cmd)
 int fill_cmd(const char *tokens[], struct Command *cmd)
 {
     cmd->next = NULL;
-    cmd->prev = NULL;
     cmd->op = operators[OP_NONE];
     cmd->name = tokens[0];
     cmd->argv = (char *const *)tokens;
@@ -195,6 +194,7 @@ struct Command *cmd_list_from_tok(const char *tokens[])
     if (!root)
         panic("malloc");
 
+    root->prev = NULL;
     curr = root;
     for(;;) {
         seek = fill_cmd(tokens, curr);
@@ -202,11 +202,10 @@ struct Command *cmd_list_from_tok(const char *tokens[])
             // error, free whatever was allocated
             free_cmd_list(root);
             return NULL;
-        }
-        else if (seek == 0)
+        } else if (!seek) {
             break;
+        }
         tokens += seek;
-        // print_cmd(curr);
 
         curr->next = malloc(sizeof(struct Command));
         if (!curr->next)

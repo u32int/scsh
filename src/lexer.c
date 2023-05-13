@@ -157,11 +157,6 @@ int tokenize_line(char *line, const char *tokens[], bool free_list[], size_t siz
                 // uhhh this is not great and we could do better performance wise
                 size_t oplen = strlen(operators[i]);
                 if (!strncmp(operators[i], curr, oplen)) {
-                    if (*(curr + 1) == 0 && i == OP_PIPE) {
-                        fputs("scsh: parse error: unterminated pipe\n", stderr);
-                        return -1;
-                    }
-
                     is_op = true;
 
                     // save preceding string, if any (ex. in 'ls&&' the 'ls')
