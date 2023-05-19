@@ -9,7 +9,7 @@
 #include "shellstate.h"
 
 // the order of operators matters here, the onces at lower indices get higher priority in the lexer 
-const char *operators[] = { "&&", "&", "||", "|", ">>", ">", ";", NULL };
+const char *operators[] = { "&&", "&", "||", "|", ">>", ">", "<", ";", NULL };
 
 bool tok_is_operator(const char *token)
 {

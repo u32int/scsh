@@ -8,10 +8,11 @@ struct Command {
     char *const *argv;
     // operator associated with the command
     const char *op;
-    // a file to redirect output to if '>' or '>>' was specified. This data is outside of the union because
-    // it can be combined with other operators. TODO: '<'
+    // files to redirect output to if '>', '>>' or '<' was specified.
     const char *redir;
     bool redir_append;
+    const char *redir_in;
+    // linked list
     struct Command *next, *prev;
 };
 

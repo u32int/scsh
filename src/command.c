@@ -52,28 +52,49 @@ ssize_t run_builtin(struct Command *cmd)
     return 0;
 }
 
-void do_exec(struct Command *cmd)
+// helper for do_exec
+void setup_redir(struct Command *cmd)
 {
     if (cmd->redir) {
         int flags = cmd->redir_append ?
             O_WRONLY | O_CREAT | O_APPEND :
             O_WRONLY | O_CREAT;
 
-        // rw-r--r--
-        int mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-
-        int fd = open(cmd->redir, flags, mode);
+        int fd = open(cmd->redir, flags,
+                      // rw-r--r--
+                      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
         if (fd < 0) {
             perror("[sys_open] redirection");
             exit(1);
         }
-
         // replace stdout with newly opened file
         if (dup2(fd, 1) < 0) {
             perror("[sys_dup] redirection");
             exit(1);
         }
     }
+
+    if (cmd->redir_in) {
+        int fd = open(cmd->redir_in, O_RDONLY,
+                      // rw-r--r--
+                      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            if (fd < 0) {
+                perror("[sys_open] redirection");
+                exit(1);
+            }
+
+        // replace stdin with newly opened file
+        if (dup2(fd, 0) < 0) {
+            perror("[sys_dup] redirection");
+            exit(1);
+        }
+    }
+}
+
+// helper for run_cmd
+void do_exec(struct Command *cmd)
+{
+    setup_redir(cmd);
 
     execvp(cmd->name, cmd->argv); // exec never returns when successful
     panic(cmd->name);
@@ -146,28 +167,31 @@ int fill_cmd(const char *tokens[], struct Command *cmd)
     cmd->argv = (char *const *)tokens;
     cmd->redir = NULL;
     cmd->redir_append = false;
+    cmd->redir_in = NULL;
 
     const char **tok = tokens;
     while (*tok != NULL) {
         if (*tok == operators[OP_REDIR] ||
             *tok == operators[OP_REDIR_APPEND]) {
-            // setup redirection
-            // checking this might not be necessary anymore since the lexer performs validation
-            if (*(tok + 1) != NULL) {
-                cmd->redir = *(tok + 1);
-                // mark redir_append
-                cmd->redir_append = *tok == operators[OP_REDIR_APPEND];
+            // setup redirection ('>' and '>>')
+            cmd->redir = *(tok + 1);
+            // mark redir_append
+            cmd->redir_append = *tok == operators[OP_REDIR_APPEND];
 
-                // terminate argv
-                *tok = NULL;
+            *tok = NULL;
+            tok += 2;
+            continue;
+        } else if (*tok == operators[OP_REDIR_IN]) {
+            // setup redirection ('<')
+            cmd->redir_in = *(tok + 1);
 
-                tok += 2;
-                continue;
-            }
+            *tok = NULL;
+            tok += 2;
+            continue;
         }
 
         if (tok_is_operator(*tok)) {
-            // operator, store it as part of cmd
+            // other operator, store it as part of cmd
             cmd->op = *tok;
             *tok = NULL;
 

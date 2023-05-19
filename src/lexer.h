@@ -12,6 +12,7 @@ enum Operator {
     OP_PIPE,
     OP_REDIR_APPEND,
     OP_REDIR,
+    OP_REDIR_IN,
     OP_SEMICOLON,
     OP_NONE
 };
